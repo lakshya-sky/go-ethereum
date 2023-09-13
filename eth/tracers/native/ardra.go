@@ -112,6 +112,9 @@ func (t *ardraTracer) CaptureStart(env *vm.EVM, from common.Address, to common.A
 
 // CaptureEnd is called after the call finishes to finalize the tracing.
 func (t *ardraTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
+	if t.reverted {
+		return
+	}
 	if t.create {
 		// Keep existing account prior to contract creation at that address
 		if s := t.pre[t.to]; s != nil && !s.exists() {
@@ -122,15 +125,25 @@ func (t *ardraTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
 	t.processOutput(output, err)
 }
 
+// CaptureEnter is called when EVM enters a new scope (via call, create or selfdestruct).
+func (t *ardraTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
+	if t.reverted {
+		return
+	}
+}
+
 // CaptureExit is called when EVM exits a scope, even if the scope didn't
 // execute any code.
 func (t *ardraTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
+	if t.reverted {
+		return
+	}
 	t.processOutput(output, err)
 }
 
 // CaptureState implements the EVMLogger interface to trace a single step of VM execution.
 func (t *ardraTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
-	if err != nil {
+	if err != nil || t.reverted {
 		return
 	}
 	// Skip if tracing was interrupted
@@ -180,6 +193,9 @@ func (t *ardraTracer) CaptureTxStart(gasLimit uint64) {
 }
 
 func (t *ardraTracer) CaptureTxEnd(restGas uint64) {
+	if t.reverted {
+		return
+	}
 
 	for addr, state := range t.pre {
 		// The deleted account's state is pruned from `post` but kept in `pre`
