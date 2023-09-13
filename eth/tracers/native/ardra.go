@@ -36,11 +36,17 @@ func init() {
 	tracers.DefaultDirectory.Register("ardraTracer", newArdraTracer, false)
 }
 
+type TraceResponse struct {
+	Post state `json:"post"`
+	//Pre state `json:"pre"`
+}
+
 type ardraTracer struct {
 	noopTracer
-	env      *vm.EVM
-	pre      state
-	post     state
+	env  *vm.EVM
+	pre  state
+	post state
+
 	create   bool
 	to       common.Address
 	gasLimit uint64 // Amount of gas bought for the whole tx
@@ -109,6 +115,7 @@ func (t *ardraTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
 // CaptureState implements the EVMLogger interface to trace a single step of VM execution.
 func (t *ardraTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	if err != nil {
+
 		return
 	}
 	// Skip if tracing was interrupted
@@ -222,10 +229,7 @@ func (t *ardraTracer) CaptureTxEnd(restGas uint64) {
 func (t *ardraTracer) GetResult() (json.RawMessage, error) {
 	var res []byte
 	var err error
-	res, err = json.Marshal(struct {
-		Post state `json:"post"`
-		//Pre  state `json:"pre"`
-	}{t.post}) //t.pre
+	res, err = json.Marshal(TraceResponse{Post: t.post})
 
 	if err != nil {
 		return nil, err
