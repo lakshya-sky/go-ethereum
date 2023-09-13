@@ -19,6 +19,7 @@ package native
 import (
 	//"bytes"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"sync/atomic"
 
@@ -37,9 +38,9 @@ func init() {
 }
 
 type TraceResponse struct {
-	Errored bool  `json:"errored"`
-	Post    state `json:"post"`
+	Post state `json:"post"`
 	//Pre state `json:"pre"`
+	Reverted bool `json:"reverted"`
 }
 
 type ardraTracer struct {
@@ -52,12 +53,11 @@ type ardraTracer struct {
 	to       common.Address
 	gasLimit uint64 // Amount of gas bought for the whole tx
 	//config    prestateTracerConfig
-	interrupt   atomic.Bool // Atomic flag to signal execution interruption
-	reason      error       // Textual reason for the interruption
-	created     map[common.Address]bool
-	deleted     map[common.Address]bool
-	errored     bool
-	erorrReason error
+	interrupt atomic.Bool // Atomic flag to signal execution interruption
+	reason    error       // Textual reason for the interruption
+	created   map[common.Address]bool
+	deleted   map[common.Address]bool
+	reverted  bool
 }
 
 func newArdraTracer(ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, error) {
@@ -74,6 +74,12 @@ func newArdraTracer(ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, 
 		created: make(map[common.Address]bool),
 		deleted: make(map[common.Address]bool),
 	}, nil
+}
+
+func (t *ardraTracer) processOutput(output []byte, err error) {
+	if errors.Is(err, vm.ErrExecutionReverted) {
+		t.reverted = true
+	}
 }
 
 // CaptureStart implements the EVMLogger interface to initialize the tracing operation.
@@ -113,14 +119,18 @@ func (t *ardraTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
 			delete(t.pre, t.to)
 		}
 	}
+	t.processOutput(output, err)
+}
+
+// CaptureExit is called when EVM exits a scope, even if the scope didn't
+// execute any code.
+func (t *ardraTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
+	t.processOutput(output, err)
 }
 
 // CaptureState implements the EVMLogger interface to trace a single step of VM execution.
 func (t *ardraTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	if err != nil {
-		log.Error("CaptureState", "err", err)
-		t.errored = true
-		t.erorrReason = err
 		return
 	}
 	// Skip if tracing was interrupted
@@ -235,8 +245,8 @@ func (t *ardraTracer) GetResult() (json.RawMessage, error) {
 	var res []byte
 	var err error
 	res, err = json.Marshal(TraceResponse{
-		Errored: t.errored,
-		Post:    t.post,
+		Post:     t.post,
+		Reverted: t.reverted,
 	})
 
 	if err != nil {

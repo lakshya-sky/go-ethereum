@@ -60,7 +60,7 @@
     "diffMode": true
   },
   "result": {
-    "errored": false,
+    "reverted": false,
     "post": {
       "0x0024f658a46fbb89d8ac105e98d7ac7cbbaf27c5": {
         "balance": "0x6f05b59d3b20000"

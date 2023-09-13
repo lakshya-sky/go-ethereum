@@ -204,7 +204,7 @@
     "diffMode": true
   },
   "result": {
-    "errored": false,
+    "reverted": false,
     "post": {
       "0x2a65aca4d5fc5b5c859090a6c34d164135398226": {
         "balance": "0x98e2b02f14529b1eb2"
