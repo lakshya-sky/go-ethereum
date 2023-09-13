@@ -71,6 +71,7 @@
     "diffMode": true
   },
   "result": {
+    "errored": true,
     "post": {
       "0x808b4da0be6c9512e948521452227efc619bea52": {
         "balance": "0x2cd72a36dd031f089",
