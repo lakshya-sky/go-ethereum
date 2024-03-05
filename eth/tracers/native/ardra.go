@@ -23,6 +23,7 @@ import (
 	"math/big"
 	"sync/atomic"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	//"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -40,7 +41,8 @@ func init() {
 type TraceResponse struct {
 	Post state `json:"post"`
 	//Pre state `json:"pre"`
-	Reverted bool `json:"reverted"`
+	Reverted     bool   `json:"reverted"`
+	RevertReason string `json:"revertReason,omitempty"`
 }
 
 type ardraTracer struct {
@@ -53,11 +55,12 @@ type ardraTracer struct {
 	to       common.Address
 	gasLimit uint64 // Amount of gas bought for the whole tx
 	//config    prestateTracerConfig
-	interrupt atomic.Bool // Atomic flag to signal execution interruption
-	reason    error       // Textual reason for the interruption
-	created   map[common.Address]bool
-	deleted   map[common.Address]bool
-	reverted  bool
+	interrupt    atomic.Bool // Atomic flag to signal execution interruption
+	reason       error       // Textual reason for the interruption
+	created      map[common.Address]bool
+	deleted      map[common.Address]bool
+	reverted     bool
+	revertReason string
 }
 
 func newArdraTracer(ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, error) {
@@ -79,7 +82,14 @@ func newArdraTracer(ctx *tracers.Context, cfg json.RawMessage) (tracers.Tracer, 
 func (t *ardraTracer) processOutput(output []byte, err error) {
 	if errors.Is(err, vm.ErrExecutionReverted) {
 		t.reverted = true
+		if len(output) < 4 {
+			return
+		}
+		if unpacked, err := abi.UnpackRevert(output); err == nil {
+			t.revertReason = unpacked
+		}
 	}
+
 }
 
 // CaptureStart implements the EVMLogger interface to initialize the tracing operation.
@@ -204,7 +214,7 @@ func (t *ardraTracer) CaptureTxEnd(restGas uint64) {
 		}
 		modified := false
 		postAccount := &account{Storage: make(map[common.Hash]common.Hash)}
-		newBalance := t.env.StateDB.GetBalance(addr)
+		newBalance := t.env.StateDB.GetBalance(addr).ToBig()
 		newNonce := t.env.StateDB.GetNonce(addr)
 		//newCode := t.env.StateDB.GetCode(addr)
 
@@ -263,6 +273,7 @@ func (t *ardraTracer) GetResult() (json.RawMessage, error) {
 	res, err = json.Marshal(TraceResponse{
 		Post:     t.post,
 		Reverted: t.reverted,
+        RevertReason: t.revertReason,
 	})
 
 	if err != nil {
@@ -285,7 +296,7 @@ func (t *ardraTracer) lookupAccount(addr common.Address) {
 	}
 
 	t.pre[addr] = &account{
-		Balance: t.env.StateDB.GetBalance(addr),
+		Balance: t.env.StateDB.GetBalance(addr).ToBig(),
 		Nonce:   t.env.StateDB.GetNonce(addr),
 		//Code:    t.env.StateDB.GetCode(addr),
 		Storage: make(map[common.Hash]common.Hash),
